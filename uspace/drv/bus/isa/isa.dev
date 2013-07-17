@@ -1,0 +1,28 @@
+com1:
+	match 100 isa/ns8250
+	irq 4
+	io_range 3f8 8
+
+com2:
+	match 100 isa/ns8250
+	irq 3
+	io_range 2f8 8
+
+i8042:
+	match 100 isa/i8042
+	irq 1
+	irq 12
+	io_range 060 5
+
+ne2k:
+	match 100 isa/ne2k
+	irq 5
+	io_range 300 20
+
+sb16:
+	match 100 isa/sb16
+	io_range 220 20
+	io_range 330 2
+	irq 5
+	dma 1
+	dma 5

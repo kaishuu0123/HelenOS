@@ -1,0 +1,87 @@
+Memory management
+=================
+
+1. Virtual Address Translation
+
+1.1 Hierarchical 4-level per address space page tables
+
+SPARTAN kernel deploys generic interface for 4-level page tables for these
+architectures: amd64, arm32, ia32, mips32 and ppc32. In this setting, page
+tables are hierarchical and are not shared by address spaces (i.e. one set of
+page tables per address space).
+
+
+ VADDR
+ +-----------------------------------------------------------------------------+
+ |   PTL0_INDEX  |   PTL1_INDEX   |   PTL2_INDEX   |   PTL3_INDEX   |   OFFSET |
+ +-----------------------------------------------------------------------------+
+
+
+ PTL0                   PTL1                   PTL2                   PTL3
+ +--------+             +--------+             +--------+             +--------+
+ |        |             |        |             |  PTL3  | -----\      |        |
+ |        |             |        |             +--------+      |      |        |
+ |        |             +--------+             |        |      |      |        |
+ |        |             |  PTL2  | -----\      |        |      |      |        |
+ |        |             +--------+      |      |        |      |      |        |
+ |        |             |        |      |      |        |      |      +--------+
+ +--------+             |        |      |      |        |      |      | FRAME  |
+ |  PTL1  | -----\      |        |      |      |        |      |      +--------+
+ +--------+      |      |        |      |      |        |      |      |        |
+ |        |      |      |        |      |      |        |      |      |        |
+ |        |      |      |        |      |      |        |      |      |        |
+ +--------+      \----> +--------+      \----> +--------+      \----> +--------+
+     ^
+     |
+     |
+ +--------+
+ |  PTL0  |
+ +--------+
+
+
+PTL0		Page Table Level 0 (Page Directory)
+PTL1		Page Table Level 1
+PTL2		Page Table Level 2
+PTL3		Page Table Level 3
+
+PTL0_INDEX	Index into PTL0
+PTL1_INDEX	Index into PTL1
+PTL2_INDEX	Index into PTL2
+PTL3_INDEX	Index into PTL3
+
+VADDR		Virtual address for which mapping is looked up
+FRAME		Physical address of memory frame to which VADDR is mapped
+
+
+On architectures whose hardware has fewer levels, PTL2 and, if need be, PTL1 are
+left out. TLB-only architectures are to define custom format for software page
+tables.
+
+1.2 Single global page hash table
+
+Generic page hash table interface is deployed on 64-bit architectures without
+implied hardware support for hierarchical page tables, i.e. ia64 and sparc64.
+There is only one global page hash table in the system shared by all address
+spaces.
+
+
+2. Memory allocators
+
+2.1 General allocator
+
+'malloc' function accepts flags as a second argument. The flags are directly
+passed to the underlying frame_alloc function. 
+
+1) If the flags parameter contains FRAME_ATOMIC, the allocator will not sleep.
+   The allocator CAN return NULL, when memory is not directly available.
+   The caller MUST check if NULL was not returned
+
+2) If the flags parameter does not contain FRAME_ATOMIC, the allocator
+   will never return NULL, but it CAN sleep indefinitely. The caller
+   does not have to check the return value.
+
+3) The maximum size that can be allocated using malloc is 256K
+
+Rules 1) and 2) apply to slab_alloc as well. Using SLAB allocator
+to allocate too large values is not recommended.
+

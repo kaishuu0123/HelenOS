@@ -1,0 +1,170 @@
+/*
+ * Copyright (c) 2006 Ondrej Palkovsky
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * - Redistributions of source code must retain the above copyright
+ *   notice, this list of conditions and the following disclaimer.
+ * - Redistributions in binary form must reproduce the above copyright
+ *   notice, this list of conditions and the following disclaimer in the
+ *   documentation and/or other materials provided with the distribution.
+ * - The name of the author may not be used to endorse or promote products
+ *   derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/** @addtogroup genericipc
+ * @{
+ */
+/** @file
+ */
+
+#ifndef KERN_IPC_H_
+#define KERN_IPC_H_
+
+#include <synch/spinlock.h>
+#include <synch/mutex.h>
+#include <synch/waitq.h>
+#include <abi/ipc/ipc.h>
+#include <abi/proc/task.h>
+#include <typedefs.h>
+
+#define IPC_MAX_PHONES  64
+
+struct answerbox;
+struct task;
+
+typedef enum {
+	/** Phone is free and can be allocated */
+	IPC_PHONE_FREE = 0,
+	/** Phone is connecting somewhere */
+	IPC_PHONE_CONNECTING,
+	/** Phone is connected */
+	IPC_PHONE_CONNECTED,
+	/** Phone is hung up, waiting for answers to come */
+	IPC_PHONE_HUNGUP,
+	/** Phone was hungup from server */
+	IPC_PHONE_SLAMMED
+} ipc_phone_state_t;
+
+/** Structure identifying phone (in TASK structure) */
+typedef struct {
+	mutex_t lock;
+	link_t link;
+	struct answerbox *callee;
+	ipc_phone_state_t state;
+	atomic_t active_calls;
+} phone_t;
+
+typedef struct answerbox {
+	IRQ_SPINLOCK_DECLARE(lock);
+	
+	struct task *task;
+	
+	waitq_t wq;
+	
+	/** Linkage for the list of task's synchronous answerboxes. */
+	link_t sync_box_link;
+	
+	/** Phones connected to this answerbox. */
+	list_t connected_phones;
+	/** Received calls. */
+	list_t calls;
+	list_t dispatched_calls;  /* Should be hash table in the future */
+	
+	/** Answered calls. */
+	list_t answers;
+	
+	IRQ_SPINLOCK_DECLARE(irq_lock);
+	
+	/** Notifications from IRQ handlers. */
+	list_t irq_notifs;
+	/** IRQs with notifications to this answerbox. */
+	list_t irq_list;
+} answerbox_t;
+
+typedef struct {
+	sysarg_t args[IPC_CALL_LEN];
+	/**
+	 * Task which made or forwarded the call with IPC_FF_ROUTE_FROM_ME,
+	 * or the task which answered the call.
+	 */
+	task_id_t task_id;
+	/** Phone which made or last masqueraded this call. */
+	phone_t *phone;
+} ipc_data_t;
+
+typedef struct {
+	link_t link;
+	
+	unsigned int flags;
+	
+	/** Identification of the caller. */
+	struct task *sender;
+	
+	/*
+	 * The caller box is different from sender->answerbox
+	 * for synchronous calls.
+	 */
+	answerbox_t *callerbox;
+	
+	/** Private data to internal IPC. */
+	sysarg_t priv;
+	
+	/** Data passed from/to userspace. */
+	ipc_data_t data;
+	
+	/** Buffer for IPC_M_DATA_WRITE and IPC_M_DATA_READ. */
+	uint8_t *buffer;
+	
+	/*
+	 * The forward operation can masquerade the caller phone. For those
+	 * cases, we must keep it aside so that the answer is processed
+	 * correctly.
+	 */
+	phone_t *caller_phone;
+} call_t;
+
+extern answerbox_t *ipc_phone_0;
+
+extern void ipc_init(void);
+
+extern call_t *ipc_call_alloc(unsigned int);
+extern void ipc_call_free(call_t *);
+
+extern int ipc_call(phone_t *, call_t *);
+extern int ipc_call_sync(phone_t *, call_t *);
+extern call_t *ipc_wait_for_call(answerbox_t *, uint32_t, unsigned int);
+extern int ipc_forward(call_t *, phone_t *, answerbox_t *, unsigned int);
+extern void ipc_answer(answerbox_t *, call_t *);
+
+extern void ipc_phone_init(phone_t *);
+extern void ipc_phone_connect(phone_t *, answerbox_t *);
+extern int ipc_phone_hangup(phone_t *);
+
+extern void ipc_answerbox_init(answerbox_t *, struct task *);
+
+extern void ipc_cleanup(void);
+extern void ipc_backsend_err(phone_t *, call_t *, sysarg_t);
+extern void ipc_answerbox_slam_phones(answerbox_t *, bool);
+extern void ipc_cleanup_call_list(list_t *);
+
+extern void ipc_print_task(task_id_t);
+
+#endif
+
+/** @}
+ */

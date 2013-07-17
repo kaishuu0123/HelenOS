@@ -1,0 +1,6 @@
+{
+	"purge1",
+	"Itanium TLB purge test",
+	&test_purge1,
+	true
+},

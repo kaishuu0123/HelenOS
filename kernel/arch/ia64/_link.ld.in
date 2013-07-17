@@ -1,0 +1,50 @@
+/** IA-64 linker script
+ *
+ *  It is ELF format, but its only section looks like this:
+ *  kernel text
+ *  kernel data
+ *
+ */
+
+#define LOAD_ADDRESS_V	0xe000000004800000
+#define LOAD_ADDRESS_P	0x0000000004800000
+
+ENTRY(kernel_image_start)
+
+SECTIONS {
+	.image LOAD_ADDRESS_V: AT (LOAD_ADDRESS_P) {
+		ktext_start = .;
+		*(K_TEXT_START);
+		*(.text .text.*)
+		ktext_end = .;
+		
+		kdata_start = .;
+		*(K_DATA_START)
+		*(.rodata .rodata.*)
+		*(.opd)
+		*(.data .data.*)
+		hardcoded_load_address = .;
+		QUAD(LOAD_ADDRESS_V);
+		hardcoded_ktext_size = .;
+		QUAD(ktext_end - ktext_start);
+		hardcoded_kdata_size = .;
+		QUAD(kdata_end - kdata_start);
+		__gp = .;
+		*(.got .got.*)
+		*(.sdata)
+		*(.sbss)
+		*(.scommon)
+		*(.bss)
+		*(COMMON);
+		
+		. = ALIGN(8);
+		symbol_table = .;
+		*(symtab.*);            /* Symbol table, must be LAST symbol!*/
+		
+		kdata_end = .;
+	}
+	
+	/DISCARD/ : {
+		*(*);
+	}
+}
